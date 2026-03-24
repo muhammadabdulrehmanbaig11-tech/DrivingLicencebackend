@@ -6,13 +6,9 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Global prefix: all routes start with /api
   app.setGlobalPrefix('api');
-
-  // Parse cookies (needed for httpOnly refresh tokens)
   app.use(cookieParser());
 
-  // Validate and sanitize all incoming DTOs
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -24,15 +20,22 @@ async function bootstrap() {
     }),
   );
 
-  // CORS — allow frontend to make requests with credentials (cookies)
   const allowedOrigins = [
     process.env.FRONTEND_URL,
     'http://localhost:3000',
-  ].filter(Boolean) as string[];
+  ].filter((value): value is string => Boolean(value));
 
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS blocked for origin: ${origin}`));
+      }
+    },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   const port = Number(process.env.PORT) || 3001;
