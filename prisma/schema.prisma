@@ -1,0 +1,225 @@
+// ============================================================
+// DriveLicence Pro — Instructor Marketplace
+// Prisma Schema — 8 Entities (Security-First)
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ──────────────── ENUMS ────────────────
+
+enum UserRole {
+  STUDENT
+  INSTRUCTOR
+  ADMIN
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum BookingStatus {
+  REQUESTED
+  ACCEPTED
+  DECLINED
+  CANCELLED
+  COMPLETED
+  DISPUTED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum TransmissionType {
+  MANUAL
+  AUTOMATIC
+  BOTH
+}
+
+// ──────────────── MODELS ────────────────
+
+/// Base user account — shared by Students, Instructors, and Admins.
+/// Passwords hashed with Argon2. Email must be verified before booking.
+model User {
+  id               String   @id @default(uuid())
+  email            String   @unique
+  passwordHash     String   // Argon2-hashed
+  firstName        String
+  lastName         String
+  phone            String?
+  avatarUrl        String?
+  role             UserRole
+  isActive         Boolean  @default(true)
+  emailVerified    Boolean  @default(false)
+  emailVerifyToken String?  // Hashed verification token
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Relations
+  instructorProfile InstructorProfile?
+  bookingsAsStudent Booking[]  @relation("StudentBookings")
+  reviewsWritten    Review[]   @relation("ReviewAuthor")
+  payments          Payment[]
+  auditLogs         AuditLog[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+/// Extended profile for Instructors.
+/// Must be admin-approved before appearing in public search results.
+/// avgRating and totalReviews are denormalized for fast search.
+model InstructorProfile {
+  id              String          @id @default(uuid())
+  userId          String          @unique
+  bio             String          // Sanitized server-side for XSS
+  hourlyRate      Decimal         @db.Decimal(10, 2)
+  experienceYears Int
+  transmission    TransmissionType
+  languages       String[]        // Array of languages spoken
+  licenseNumber   String
+  profileComplete Boolean         @default(false)
+  approvalStatus  ApprovalStatus  @default(PENDING)
+  approvedAt      DateTime?
+  approvedBy      String?         // Admin user ID who approved
+  avgRating       Float           @default(0)
+  totalReviews    Int             @default(0)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relations
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  location        InstructorLocation?
+  bookings        Booking[]
+  reviewsReceived Review[]            @relation("ReviewInstructor")
+
+  @@index([approvalStatus])
+  @@index([avgRating])
+  @@map("instructor_profiles")
+}
+
+/// Instructor service area location.
+/// Indexed for geo-proximity search and city filtering.
+model InstructorLocation {
+  id           String @id @default(uuid())
+  instructorId String @unique
+  address      String
+  city         String
+  state        String?
+  postalCode   String
+  country      String @default("US")
+  latitude     Float
+  longitude    Float
+
+  // Relations
+  instructor InstructorProfile @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+
+  @@index([city])
+  @@index([latitude, longitude])
+  @@map("instructor_locations")
+}
+
+/// A booked driving lesson between a Student and Instructor.
+/// Ownership is enforced on every action — students see only theirs,
+/// instructors see only theirs.
+model Booking {
+  id              String        @id @default(uuid())
+  studentId       String
+  instructorId    String
+  date            DateTime      @db.Date
+  startTime       String        // "09:00"
+  endTime         String        // "10:00"
+  status          BookingStatus @default(REQUESTED)
+  totalPrice      Decimal       @db.Decimal(10, 2) // Snapshot at booking time
+  studentNotes    String?       // Sanitized
+  instructorNotes String?       // Sanitized
+  cancelledBy     UserRole?
+  cancelReason    String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  student    User              @relation("StudentBookings", fields: [studentId], references: [id])
+  instructor InstructorProfile @relation(fields: [instructorId], references: [id])
+  payment    Payment?
+  review     Review?
+
+  @@index([studentId, status])
+  @@index([instructorId, status])
+  @@map("bookings")
+}
+
+/// Payment record linked to Stripe Payment Intents.
+/// We NEVER store card numbers — only Stripe identifiers.
+model Payment {
+  id                     String        @id @default(uuid())
+  bookingId              String        @unique
+  userId                 String        // The payer (student)
+  stripePaymentIntentId  String        @unique
+  amount                 Decimal       @db.Decimal(10, 2)
+  currency               String        @default("usd")
+  status                 PaymentStatus @default(PENDING)
+  paidAt                 DateTime?
+  refundedAt             DateTime?
+  createdAt              DateTime      @default(now())
+
+  // Relations
+  booking Booking @relation(fields: [bookingId], references: [id])
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@map("payments")
+}
+
+/// Student review of an instructor after a COMPLETED booking.
+/// One review per booking (unique constraint). Rating validated 1–5.
+model Review {
+  id           String @id @default(uuid())
+  bookingId    String @unique // One review per booking
+  studentId    String
+  instructorId String
+  rating       Int    // 1–5, validated server-side
+  comment      String? // Sanitized for XSS
+  createdAt    DateTime @default(now())
+
+  // Relations
+  booking    Booking           @relation(fields: [bookingId], references: [id])
+  student    User              @relation("ReviewAuthor", fields: [studentId], references: [id])
+  instructor InstructorProfile @relation("ReviewInstructor", fields: [instructorId], references: [id])
+
+  @@index([instructorId])
+  @@map("reviews")
+}
+
+/// Immutable audit log for security-sensitive operations.
+/// Append-only — never deleted.
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?  // Who performed the action
+  action     String   // e.g. "INSTRUCTOR_APPROVED", "BOOKING_CANCELLED"
+  targetType String   // e.g. "InstructorProfile", "Booking"
+  targetId   String
+  metadata   Json?    // Extra context
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([action])
+  @@index([targetType, targetId])
+  @@map("audit_logs")
+}
