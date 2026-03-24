@@ -15,9 +15,9 @@ async function bootstrap() {
   // Validate and sanitize all incoming DTOs
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true,            // Strip unknown properties
-      forbidNonWhitelisted: true, // Throw on unknown properties
-      transform: true,            // Auto-transform to DTO instances
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
       transformOptions: {
         enableImplicitConversion: true,
       },
@@ -30,9 +30,10 @@ async function bootstrap() {
     credentials: true,
   });
 
-  const port = process.env.PORT || 3001;
-  await app.listen(port);
-  console.log(`🚀 Backend running on http://localhost:${port}/api`);
+  const port = Number(process.env.PORT) || 3001;
+  await app.listen(port, '0.0.0.0');
+
+  console.log(`🚀 Backend running on port ${port}`);
 }
 
 bootstrap();
