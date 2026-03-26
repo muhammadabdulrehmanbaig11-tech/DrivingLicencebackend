@@ -30,29 +30,46 @@ export class AuthService {
             throw new ConflictException('Cannot register as admin');
         }
 
-        // Check for existing email
-        const existing = await this.prisma.user.findUnique({
-            where: { email: dto.email.toLowerCase().trim() },
-        });
-        if (existing) {
-            throw new ConflictException('A user with this email already exists');
+        const email = dto.email.toLowerCase().trim();
+        this.logger.log(`Registration attempt: email=${email}, role=${dto.role}, firstName=${dto.firstName?.length || 0}chars, lastName=${dto.lastName?.length || 0}chars`);
+
+        try {
+            // Check for existing email
+            const existing = await this.prisma.user.findUnique({
+                where: { email },
+            });
+            if (existing) {
+                this.logger.warn(`Registration conflict: email ${email} already exists`);
+                throw new ConflictException('A user with this email already exists');
+            }
+
+            // Hash password with Argon2
+            const passwordHash = await argon2.hash(dto.password);
+
+            // Create user
+            const user = await this.prisma.user.create({
+                data: {
+                    email,
+                    passwordHash,
+                    firstName: dto.firstName.trim(),
+                    lastName: dto.lastName.trim(),
+                    role: dto.role,
+                },
+            });
+
+            this.logger.log(`Registration successful: userId=${user.id}, email=${email}, role=${dto.role}`);
+            return this.generateTokens(user.id, user.email, user.role);
+        } catch (error) {
+            // Re-throw known NestJS exceptions
+            if (error instanceof ConflictException) throw error;
+
+            // Log detailed Prisma/DB errors
+            const prismaError = error as { code?: string; meta?: unknown; message?: string };
+            this.logger.error(
+                `Registration DB error: code=${prismaError.code}, message=${prismaError.message}, meta=${JSON.stringify(prismaError.meta)}`,
+            );
+            throw new ConflictException('Registration failed. Please try again or contact support.');
         }
-
-        // Hash password with Argon2
-        const passwordHash = await argon2.hash(dto.password);
-
-        // Create user
-        const user = await this.prisma.user.create({
-            data: {
-                email: dto.email.toLowerCase().trim(),
-                passwordHash,
-                firstName: dto.firstName.trim(),
-                lastName: dto.lastName.trim(),
-                role: dto.role,
-            },
-        });
-
-        return this.generateTokens(user.id, user.email, user.role);
     }
 
     /**
