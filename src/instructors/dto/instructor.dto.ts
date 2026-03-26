@@ -92,7 +92,7 @@ export class SetLocationDto {
 
     @IsOptional()
     @IsString()
-    @MaxLength(5)
+    @MaxLength(56)
     country?: string;
 
     @IsNumber()
