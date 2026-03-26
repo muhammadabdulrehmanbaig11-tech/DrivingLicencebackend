@@ -32,13 +32,17 @@ export class InstructorsController {
         return this.instructorsService.search(dto);
     }
 
-    /** GET /api/instructors/:id — View single instructor profile */
-    @Get(':id')
-    getPublicProfile(@Param('id') id: string) {
-        return this.instructorsService.getPublicProfile(id);
-    }
-
     // ─── INSTRUCTOR-ONLY ENDPOINTS ───
+    // IMPORTANT: These "me" routes MUST be defined BEFORE the ":id" route
+    // so NestJS doesn't match "me" as an :id parameter.
+
+    /** GET /api/instructors/me/profile — Get own profile */
+    @Get('me/profile')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(UserRole.INSTRUCTOR)
+    getMyProfile(@CurrentUser() user: { id: string }) {
+        return this.instructorsService.getMyProfile(user.id);
+    }
 
     /** POST /api/instructors/me — Create profile */
     @Post('me')
@@ -49,14 +53,6 @@ export class InstructorsController {
         @Body() dto: CreateInstructorProfileDto,
     ) {
         return this.instructorsService.createProfile(user.id, dto);
-    }
-
-    /** GET /api/instructors/me/profile — Get own profile */
-    @Get('me/profile')
-    @UseGuards(JwtAuthGuard, RolesGuard)
-    @Roles(UserRole.INSTRUCTOR)
-    getMyProfile(@CurrentUser() user: { id: string }) {
-        return this.instructorsService.getMyProfile(user.id);
     }
 
     /** PATCH /api/instructors/me — Update own profile */
@@ -79,5 +75,14 @@ export class InstructorsController {
         @Body() dto: SetLocationDto,
     ) {
         return this.instructorsService.setLocation(user.id, dto);
+    }
+
+    // ─── PUBLIC PARAMETERISED ENDPOINTS ───
+    // This MUST be after all "me" routes to avoid matching "me" as an :id
+
+    /** GET /api/instructors/:id — View single instructor profile */
+    @Get(':id')
+    getPublicProfile(@Param('id') id: string) {
+        return this.instructorsService.getPublicProfile(id);
     }
 }
