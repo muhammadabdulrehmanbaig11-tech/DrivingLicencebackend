@@ -67,6 +67,11 @@ export class UpdateInstructorProfileDto {
     @IsArray()
     @IsString({ each: true })
     languages?: string[];
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(50)
+    licenseNumber?: string;
 }
 
 export class SetLocationDto {
