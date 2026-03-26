@@ -2,14 +2,19 @@ import {
     Injectable,
     ConflictException,
     UnauthorizedException,
+    BadRequestException,
+    Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
+import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { RegisterDto, LoginDto } from './dto';
+import { RegisterDto, LoginDto, ForgotPasswordDto, ResetPasswordDto } from './dto';
 
 @Injectable()
 export class AuthService {
+    private readonly logger = new Logger(AuthService.name);
+
     constructor(
         private prisma: PrismaService,
         private jwtService: JwtService,
@@ -94,6 +99,104 @@ export class AuthService {
         } catch {
             throw new UnauthorizedException('Invalid or expired refresh token');
         }
+    }
+
+    /**
+     * Request a password reset.
+     * Generates a secure token, hashes it, and stores it with a 1-hour expiry.
+     * Always returns success to prevent email enumeration.
+     */
+    async forgotPassword(dto: ForgotPasswordDto) {
+        const email = dto.email.toLowerCase().trim();
+        const user = await this.prisma.user.findUnique({
+            where: { email },
+        });
+
+        // Always return success even if user not found (prevents email enumeration)
+        if (!user) {
+            this.logger.warn(`Password reset requested for non-existent email: ${email}`);
+            return { message: 'If an account exists with that email, we have sent password reset instructions.' };
+        }
+
+        // Generate a 32-byte random token
+        const rawToken = crypto.randomBytes(32).toString('hex');
+
+        // Store the SHA-256 hash of the token (never store raw tokens)
+        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+        // Set 1-hour expiry
+        const expiry = new Date(Date.now() + 60 * 60 * 1000);
+
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: {
+                resetToken: hashedToken,
+                resetTokenExpiry: expiry,
+            },
+        });
+
+        // Log the reset link (in production, send via email service)
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
+        this.logger.log(`🔑 Password reset link for ${email}: ${resetLink}`);
+
+        return { message: 'If an account exists with that email, we have sent password reset instructions.' };
+    }
+
+    /**
+     * Verify that a reset token is valid and not expired.
+     */
+    async verifyResetToken(token: string) {
+        const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+        const user = await this.prisma.user.findFirst({
+            where: {
+                resetToken: hashedToken,
+                resetTokenExpiry: { gt: new Date() },
+            },
+        });
+
+        if (!user) {
+            throw new BadRequestException('Invalid or expired reset link. Please request a new one.');
+        }
+
+        return { valid: true };
+    }
+
+    /**
+     * Reset password using a valid token.
+     * Validates token, hashes new password, clears token.
+     */
+    async resetPassword(dto: ResetPasswordDto) {
+        const hashedToken = crypto.createHash('sha256').update(dto.token).digest('hex');
+
+        const user = await this.prisma.user.findFirst({
+            where: {
+                resetToken: hashedToken,
+                resetTokenExpiry: { gt: new Date() },
+            },
+        });
+
+        if (!user) {
+            throw new BadRequestException('Invalid or expired reset link. Please request a new one.');
+        }
+
+        // Hash the new password
+        const passwordHash = await argon2.hash(dto.newPassword);
+
+        // Update password and clear reset token
+        await this.prisma.user.update({
+            where: { id: user.id },
+            data: {
+                passwordHash,
+                resetToken: null,
+                resetTokenExpiry: null,
+            },
+        });
+
+        this.logger.log(`Password reset successful for user: ${user.email}`);
+
+        return { message: 'Your password has been reset successfully. You can now sign in.' };
     }
 
     /**

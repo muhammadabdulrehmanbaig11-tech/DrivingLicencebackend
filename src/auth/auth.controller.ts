@@ -2,6 +2,8 @@ import {
     Body,
     Controller,
     Post,
+    Get,
+    Query,
     Res,
     Req,
     HttpCode,
@@ -10,7 +12,7 @@ import {
 } from '@nestjs/common';
 import type { Response, Request } from 'express';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto } from './dto';
+import { RegisterDto, LoginDto, ForgotPasswordDto, ResetPasswordDto } from './dto';
 
 @Controller('auth')
 export class AuthController {
@@ -80,6 +82,39 @@ export class AuthController {
             path: '/',
         });
         return res.json({ message: 'Logged out' });
+    }
+
+    /**
+     * POST /api/auth/forgot-password
+     * Request a password reset email.
+     * Always returns success to prevent email enumeration.
+     */
+    @Post('forgot-password')
+    @HttpCode(HttpStatus.OK)
+    async forgotPassword(@Body() dto: ForgotPasswordDto) {
+        return this.authService.forgotPassword(dto);
+    }
+
+    /**
+     * GET /api/auth/verify-reset-token?token=xxx
+     * Check if a password reset token is valid and not expired.
+     */
+    @Get('verify-reset-token')
+    async verifyResetToken(@Query('token') token: string) {
+        if (!token) {
+            throw new UnauthorizedException('Token is required');
+        }
+        return this.authService.verifyResetToken(token);
+    }
+
+    /**
+     * POST /api/auth/reset-password
+     * Reset password using a valid token.
+     */
+    @Post('reset-password')
+    @HttpCode(HttpStatus.OK)
+    async resetPassword(@Body() dto: ResetPasswordDto) {
+        return this.authService.resetPassword(dto);
     }
 
     /**

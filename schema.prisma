@@ -10,8 +10,6 @@ generator client {
 
 datasource db {
   provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
 
 // ──────────────── ENUMS ────────────────
@@ -67,6 +65,8 @@ model User {
   isActive         Boolean  @default(true)
   emailVerified    Boolean  @default(false)
   emailVerifyToken String?  // Hashed verification token
+  resetToken       String?  // Hashed password-reset token (SHA-256)
+  resetTokenExpiry DateTime? // When the reset token expires
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -123,7 +123,7 @@ model InstructorLocation {
   city         String
   state        String?
   postalCode   String
-  country      String @default("US")
+  country      String @default("GB")
   latitude     Float
   longitude    Float
 
@@ -173,7 +173,7 @@ model Payment {
   userId                 String        // The payer (student)
   stripePaymentIntentId  String        @unique
   amount                 Decimal       @db.Decimal(10, 2)
-  currency               String        @default("usd")
+  currency               String        @default("gbp")
   status                 PaymentStatus @default(PENDING)
   paidAt                 DateTime?
   refundedAt             DateTime?
