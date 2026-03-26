@@ -24,19 +24,28 @@ export class InstructorsService {
         const existing = await this.prisma.instructorProfile.findUnique({
             where: { userId },
         });
+
+        const data = {
+            bio: sanitizeHtml(dto.bio, { allowedTags: [], allowedAttributes: {} }),
+            hourlyRate: dto.hourlyRate,
+            experienceYears: dto.experienceYears,
+            transmission: dto.transmission,
+            languages: dto.languages,
+            licenseNumber: dto.licenseNumber,
+        };
+
         if (existing) {
-            throw new ForbiddenException('Profile already exists');
+            // Update existing profile instead of erroring
+            return this.prisma.instructorProfile.update({
+                where: { userId },
+                data,
+            });
         }
 
         return this.prisma.instructorProfile.create({
             data: {
                 userId,
-                bio: sanitizeHtml(dto.bio, { allowedTags: [], allowedAttributes: {} }),
-                hourlyRate: dto.hourlyRate,
-                experienceYears: dto.experienceYears,
-                transmission: dto.transmission,
-                languages: dto.languages,
-                licenseNumber: dto.licenseNumber,
+                ...data,
             },
         });
     }
@@ -86,7 +95,7 @@ export class InstructorsService {
                 city: dto.city,
                 state: dto.state,
                 postalCode: dto.postalCode,
-                country: dto.country || 'US',
+                country: dto.country || 'United Kingdom',
                 latitude: dto.latitude,
                 longitude: dto.longitude,
             },
@@ -95,7 +104,7 @@ export class InstructorsService {
                 city: dto.city,
                 state: dto.state,
                 postalCode: dto.postalCode,
-                country: dto.country || 'US',
+                country: dto.country || 'United Kingdom',
                 latitude: dto.latitude,
                 longitude: dto.longitude,
             },
