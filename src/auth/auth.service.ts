@@ -10,6 +10,7 @@ import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto, LoginDto, ForgotPasswordDto, ResetPasswordDto } from './dto';
+import { EmailService } from '../common/email.service';
 
 @Injectable()
 export class AuthService {
@@ -18,6 +19,7 @@ export class AuthService {
     constructor(
         private prisma: PrismaService,
         private jwtService: JwtService,
+        private emailService: EmailService,
     ) { }
 
     /**
@@ -152,10 +154,10 @@ export class AuthService {
             },
         });
 
-        // Log the reset link (in production, send via email service)
-        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        // Send the actual email
+        const frontendUrl = process.env.FRONTEND_URL || 'https://teachmedrive.co.uk';
         const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
-        this.logger.log(`🔑 Password reset link for ${email}: ${resetLink}`);
+        await this.emailService.sendPasswordReset(email, resetLink);
 
         return { message: 'If an account exists with that email, we have sent password reset instructions.' };
     }
