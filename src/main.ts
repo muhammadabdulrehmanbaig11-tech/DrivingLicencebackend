@@ -20,19 +20,13 @@ async function bootstrap() {
     }),
   );
 
-  const allowedOrigins = [
-    process.env.FRONTEND_URL,
-    'http://localhost:3000',
-  ].filter((value): value is string => Boolean(value));
-
   app.enableCors({
-    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS blocked for origin: ${origin}`));
-      }
-    },
+    origin: [
+      'http://localhost:3000',
+      'https://driving-licencefrontend.vercel.app',
+      'https://teachmedrive.co.uk',
+      'https://www.teachmedrive.co.uk',
+    ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
