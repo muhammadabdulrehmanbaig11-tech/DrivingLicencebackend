@@ -1,241 +1,271 @@
 import {
-    Injectable,
-    ConflictException,
-    UnauthorizedException,
-    BadRequestException,
-    Logger,
+  Injectable,
+  ConflictException,
+  UnauthorizedException,
+  BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { RegisterDto, LoginDto, ForgotPasswordDto, ResetPasswordDto } from './dto';
+import {
+  RegisterDto,
+  LoginDto,
+  ForgotPasswordDto,
+  ResetPasswordDto,
+} from './dto';
 import { EmailService } from '../common/email.service';
 
 @Injectable()
 export class AuthService {
-    private readonly logger = new Logger(AuthService.name);
+  private readonly logger = new Logger(AuthService.name);
 
-    constructor(
-        private prisma: PrismaService,
-        private jwtService: JwtService,
-        private emailService: EmailService,
-    ) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly jwtService: JwtService,
+    private readonly emailService: EmailService,
+  ) {}
 
-    /**
-     * Register a new user account.
-     * Password is hashed with Argon2 before storage.
-     */
-    async register(dto: RegisterDto) {
-        // Prevent ADMIN role from being self-assigned
-        if (dto.role === 'ADMIN') {
-            throw new ConflictException('Cannot register as admin');
-        }
-
-        const email = dto.email.toLowerCase().trim();
-        this.logger.log(`Registration attempt: email=${email}, role=${dto.role}, firstName=${dto.firstName?.length || 0}chars, lastName=${dto.lastName?.length || 0}chars`);
-
-        try {
-            // Check for existing email
-            const existing = await this.prisma.user.findUnique({
-                where: { email },
-            });
-            if (existing) {
-                this.logger.warn(`Registration conflict: email ${email} already exists`);
-                throw new ConflictException('A user with this email already exists');
-            }
-
-            // Hash password with Argon2
-            const passwordHash = await argon2.hash(dto.password);
-
-            // Create user
-            const user = await this.prisma.user.create({
-                data: {
-                    email,
-                    passwordHash,
-                    firstName: dto.firstName.trim(),
-                    lastName: dto.lastName.trim(),
-                    role: dto.role,
-                },
-            });
-
-            this.logger.log(`Registration successful: userId=${user.id}, email=${email}, role=${dto.role}`);
-            return this.generateTokens(user.id, user.email, user.role);
-        } catch (error) {
-            // Re-throw known NestJS exceptions
-            if (error instanceof ConflictException) throw error;
-
-            // Log detailed Prisma/DB errors
-            const prismaError = error as { code?: string; meta?: unknown; message?: string };
-            this.logger.error(
-                `Registration DB error: code=${prismaError.code}, message=${prismaError.message}, meta=${JSON.stringify(prismaError.meta)}`,
-            );
-            throw new ConflictException('Registration failed. Please try again or contact support.');
-        }
+  async register(dto: RegisterDto) {
+    if (dto.role === 'ADMIN') {
+      throw new ConflictException('Cannot register as admin');
     }
 
-    /**
-     * Authenticate a user with email + password.
-     * Returns access token in body and sets refresh token in httpOnly cookie.
-     */
-    async login(dto: LoginDto) {
-        const user = await this.prisma.user.findUnique({
-            where: { email: dto.email.toLowerCase().trim() },
-        });
+    const email = dto.email.toLowerCase().trim();
+    const firstName = dto.firstName?.trim();
+    const lastName = dto.lastName?.trim();
 
-        if (!user) {
-            throw new UnauthorizedException('Invalid email or password');
-        }
+    this.logger.log(
+      `Registration attempt: email=${email}, role=${dto.role}, firstNameLength=${firstName?.length || 0}, lastNameLength=${lastName?.length || 0}`,
+    );
 
-        // Verify password with Argon2
-        const valid = await argon2.verify(user.passwordHash, dto.password);
-        if (!valid) {
-            throw new UnauthorizedException('Invalid email or password');
-        }
+    try {
+      const existingUser = await this.prisma.user.findUnique({
+        where: { email },
+      });
 
-        if (!user.isActive) {
-            throw new UnauthorizedException('Account is deactivated');
-        }
+      if (existingUser) {
+        this.logger.warn(`Registration conflict: email ${email} already exists`);
+        throw new ConflictException('A user with this email already exists');
+      }
 
-        return this.generateTokens(user.id, user.email, user.role);
+      const passwordHash = await argon2.hash(dto.password);
+
+      const user = await this.prisma.user.create({
+        data: {
+          email,
+          passwordHash,
+          firstName,
+          lastName,
+          role: dto.role,
+        },
+      });
+
+      this.logger.log(
+        `Registration successful: userId=${user.id}, email=${user.email}, role=${user.role}`,
+      );
+
+      return this.generateTokens(user.id, user.email, user.role);
+    } catch (error: unknown) {
+      if (error instanceof ConflictException) {
+        throw error;
+      }
+
+      const prismaError = error as {
+        code?: string;
+        meta?: unknown;
+        message?: string;
+      };
+
+      this.logger.error(
+        `Registration DB error: code=${prismaError.code ?? 'unknown'}, message=${prismaError.message ?? 'unknown'}, meta=${JSON.stringify(prismaError.meta ?? {})}`,
+      );
+
+      throw new ConflictException(
+        'Registration failed. Please try again or contact support.',
+      );
+    }
+  }
+
+  async login(dto: LoginDto) {
+    const email = dto.email.toLowerCase().trim();
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid email or password');
     }
 
-    /**
-     * Generate new access token from a valid refresh token.
-     */
-    async refreshToken(refreshToken: string) {
-        try {
-            const payload = this.jwtService.verify(refreshToken);
-            const user = await this.prisma.user.findUnique({
-                where: { id: payload.sub },
-            });
-
-            if (!user || !user.isActive) {
-                throw new UnauthorizedException();
-            }
-
-            return this.generateTokens(user.id, user.email, user.role);
-        } catch {
-            throw new UnauthorizedException('Invalid or expired refresh token');
-        }
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is deactivated');
     }
 
-    /**
-     * Request a password reset.
-     * Generates a secure token, hashes it, and stores it with a 1-hour expiry.
-     * Always returns success to prevent email enumeration.
-     */
-    async forgotPassword(dto: ForgotPasswordDto) {
-        const email = dto.email.toLowerCase().trim();
-        const user = await this.prisma.user.findUnique({
-            where: { email },
-        });
+    const validPassword = await argon2.verify(user.passwordHash, dto.password);
 
-        // Always return success even if user not found (prevents email enumeration)
-        if (!user) {
-            this.logger.warn(`Password reset requested for non-existent email: ${email}`);
-            return { message: 'If an account exists with that email, we have sent password reset instructions.' };
-        }
-
-        // Generate a 32-byte random token
-        const rawToken = crypto.randomBytes(32).toString('hex');
-
-        // Store the SHA-256 hash of the token (never store raw tokens)
-        const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex');
-
-        // Set 1-hour expiry
-        const expiry = new Date(Date.now() + 60 * 60 * 1000);
-
-        await this.prisma.user.update({
-            where: { id: user.id },
-            data: {
-                resetToken: hashedToken,
-                resetTokenExpiry: expiry,
-            },
-        });
-
-        // Send the actual email
-        const frontendUrl = process.env.FRONTEND_URL || 'https://teachmedrive.co.uk';
-        const resetLink = `${frontendUrl}/reset-password?token=${rawToken}`;
-        await this.emailService.sendPasswordReset(email, resetLink);
-
-        return { message: 'If an account exists with that email, we have sent password reset instructions.' };
+    if (!validPassword) {
+      throw new UnauthorizedException('Invalid email or password');
     }
 
-    /**
-     * Verify that a reset token is valid and not expired.
-     */
-    async verifyResetToken(token: string) {
-        const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    this.logger.log(`Login successful: userId=${user.id}, email=${user.email}`);
 
-        const user = await this.prisma.user.findFirst({
-            where: {
-                resetToken: hashedToken,
-                resetTokenExpiry: { gt: new Date() },
-            },
-        });
+    return this.generateTokens(user.id, user.email, user.role);
+  }
 
-        if (!user) {
-            throw new BadRequestException('Invalid or expired reset link. Please request a new one.');
-        }
+  async refreshToken(refreshToken: string) {
+    try {
+      const payload = this.jwtService.verify(refreshToken) as {
+        sub: string;
+        email: string;
+        role: string;
+      };
 
-        return { valid: true };
+      if (!payload?.sub) {
+        throw new UnauthorizedException('Invalid refresh token payload');
+      }
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+      });
+
+      if (!user || !user.isActive) {
+        throw new UnauthorizedException('Invalid or expired refresh token');
+      }
+
+      return this.generateTokens(user.id, user.email, user.role);
+    } catch (error) {
+      this.logger.warn(`Refresh token failed: ${(error as Error)?.message ?? 'unknown error'}`);
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const email = dto.email.toLowerCase().trim();
+
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      this.logger.warn(`Password reset requested for non-existent email: ${email}`);
+      return {
+        message:
+          'If an account exists with that email, we have sent password reset instructions.',
+      };
     }
 
-    /**
-     * Reset password using a valid token.
-     * Validates token, hashes new password, clears token.
-     */
-    async resetPassword(dto: ResetPasswordDto) {
-        const hashedToken = crypto.createHash('sha256').update(dto.token).digest('hex');
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(rawToken)
+      .digest('hex');
 
-        const user = await this.prisma.user.findFirst({
-            where: {
-                resetToken: hashedToken,
-                resetTokenExpiry: { gt: new Date() },
-            },
-        });
+    const expiry = new Date(Date.now() + 60 * 60 * 1000);
 
-        if (!user) {
-            throw new BadRequestException('Invalid or expired reset link. Please request a new one.');
-        }
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetToken: hashedToken,
+        resetTokenExpiry: expiry,
+      },
+    });
 
-        // Hash the new password
-        const passwordHash = await argon2.hash(dto.newPassword);
+    const frontendUrl =
+      process.env.FRONTEND_URL?.trim() || 'https://teachmedrive.co.uk';
+    const resetLink = `${frontendUrl}/reset-password?token=${encodeURIComponent(rawToken)}`;
 
-        // Update password and clear reset token
-        await this.prisma.user.update({
-            where: { id: user.id },
-            data: {
-                passwordHash,
-                resetToken: null,
-                resetTokenExpiry: null,
-            },
-        });
+    await this.emailService.sendPasswordReset(email, resetLink);
 
-        this.logger.log(`Password reset successful for user: ${user.email}`);
+    this.logger.log(`Password reset email sent: userId=${user.id}, email=${email}`);
 
-        return { message: 'Your password has been reset successfully. You can now sign in.' };
+    return {
+      message:
+        'If an account exists with that email, we have sent password reset instructions.',
+    };
+  }
+
+  async verifyResetToken(token: string) {
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        resetToken: hashedToken,
+        resetTokenExpiry: {
+          gt: new Date(),
+        },
+      },
+    });
+
+    if (!user) {
+      throw new BadRequestException(
+        'Invalid or expired reset link. Please request a new one.',
+      );
     }
 
-    /**
-     * Generate JWT access and refresh tokens.
-     */
-    private generateTokens(userId: string, email: string, role: string) {
-        const payload = { sub: userId, email, role };
+    return { valid: true };
+  }
 
-        const accessToken = this.jwtService.sign(payload, {
-            expiresIn: '15m',
-        });
+  async resetPassword(dto: ResetPasswordDto) {
+    const hashedToken = crypto
+      .createHash('sha256')
+      .update(dto.token)
+      .digest('hex');
 
-        const refreshToken = this.jwtService.sign(payload, {
-            expiresIn: '7d',
-        });
+    const user = await this.prisma.user.findFirst({
+      where: {
+        resetToken: hashedToken,
+        resetTokenExpiry: {
+          gt: new Date(),
+        },
+      },
+    });
 
-        return {
-            accessToken,
-            refreshToken,
-            user: { id: userId, email, role },
-        };
+    if (!user) {
+      throw new BadRequestException(
+        'Invalid or expired reset link. Please request a new one.',
+      );
     }
+
+    const passwordHash = await argon2.hash(dto.newPassword);
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        resetToken: null,
+        resetTokenExpiry: null,
+      },
+    });
+
+    this.logger.log(`Password reset successful for userId=${user.id}, email=${user.email}`);
+
+    return {
+      message:
+        'Your password has been reset successfully. You can now sign in.',
+    };
+  }
+
+  private generateTokens(userId: string, email: string, role: string) {
+    const payload = { sub: userId, email, role };
+
+    const accessToken = this.jwtService.sign(payload, {
+      expiresIn: '15m',
+    });
+
+    const refreshToken = this.jwtService.sign(payload, {
+      expiresIn: '7d',
+    });
+
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        id: userId,
+        email,
+        role,
+      },
+    };
+  }
 }
