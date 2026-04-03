@@ -7,12 +7,9 @@ import {
     UploadedFile,
     Body,
     BadRequestException,
-    ParseFilePipe,
-    MaxFileSizeValidator,
-    FileTypeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
+import { diskStorage, StorageEngine } from 'multer';
 import { extname, join } from 'path';
 import { existsSync, mkdirSync, unlinkSync } from 'fs';
 import { JwtAuthGuard, RolesGuard } from '../common/guards';
@@ -20,6 +17,7 @@ import { Roles, CurrentUser } from '../common/decorators';
 import { UserRole } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { randomUUID } from 'crypto';
+import { Request } from 'express';
 
 const DOCUMENT_TYPES = [
     'badgeDocumentUrl',
@@ -36,6 +34,23 @@ const UPLOAD_DIR = join(process.cwd(), 'uploads', 'documents');
 if (!existsSync(UPLOAD_DIR)) {
     mkdirSync(UPLOAD_DIR, { recursive: true });
 }
+
+// Configure storage with explicit types
+const storage: StorageEngine = diskStorage({
+    destination: (
+        _req: Request,
+        _file: Express.Multer.File,
+        cb: (error: Error | null, destination: string) => void,
+    ) => cb(null, UPLOAD_DIR),
+    filename: (
+        _req: Request,
+        file: Express.Multer.File,
+        cb: (error: Error | null, filename: string) => void,
+    ) => {
+        const uniqueName = `${randomUUID()}${extname(file.originalname).toLowerCase()}`;
+        cb(null, uniqueName);
+    },
+});
 
 @Controller('instructors/me/documents')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -54,15 +69,13 @@ export class UploadController {
     @Post()
     @UseInterceptors(
         FileInterceptor('file', {
-            storage: diskStorage({
-                destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-                filename: (_req, file, cb) => {
-                    const uniqueName = `${randomUUID()}${extname(file.originalname).toLowerCase()}`;
-                    cb(null, uniqueName);
-                },
-            }),
+            storage,
             limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
-            fileFilter: (_req, file, cb) => {
+            fileFilter: (
+                _req: Request,
+                file: Express.Multer.File,
+                cb: (error: Error | null, acceptFile: boolean) => void,
+            ) => {
                 const allowed = /\.(pdf|jpg|jpeg|png)$/i;
                 if (!allowed.test(extname(file.originalname))) {
                     return cb(
