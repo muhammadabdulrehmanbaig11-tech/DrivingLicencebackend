@@ -69,6 +69,7 @@ export class InstructorsService {
         if (dto.experienceYears !== undefined) data.experienceYears = dto.experienceYears;
         if (dto.transmission !== undefined) data.transmission = dto.transmission;
         if (dto.languages !== undefined) data.languages = dto.languages;
+        if (dto.licenseNumber !== undefined) data.licenseNumber = dto.licenseNumber;
 
         return this.prisma.instructorProfile.update({
             where: { userId },
@@ -148,9 +149,20 @@ export class InstructorsService {
             where.hourlyRate = hourlyRate;
         }
 
-        // City filter via location relation
-        const locationFilter = dto.city
-            ? { location: { city: { contains: dto.city, mode: 'insensitive' as const } } }
+        // Location filters
+        const locationConditions: any[] = [];
+        if (dto.city) {
+            locationConditions.push({ city: { contains: dto.city, mode: 'insensitive' as const } });
+        }
+        if (dto.town) {
+            locationConditions.push({ city: { contains: dto.town, mode: 'insensitive' as const } }); // Map town to city query
+        }
+        if (dto.postcode) {
+            locationConditions.push({ postalCode: { startsWith: dto.postcode, mode: 'insensitive' as const } });
+        }
+
+        const locationFilter = locationConditions.length > 0
+            ? { location: { AND: locationConditions } }
             : {};
 
         const limit = Math.min(dto.limit || 12, 20); // Cap at 20 to prevent scraping
