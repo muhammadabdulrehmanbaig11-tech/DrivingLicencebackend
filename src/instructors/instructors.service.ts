@@ -265,9 +265,37 @@ export class InstructorsService {
             throw new NotFoundException('Instructor not found');
         }
 
-        const availabilityObj = profile.availability as Record<string, { startTime: string; endTime: string }[]> | null;
-        let daySlots = availabilityObj ? availabilityObj[dayOfWeek] : [];
-        if (!daySlots) daySlots = [];
+        const availabilityRaw = profile.availability;
+        let daySlots: { startTime: string; endTime: string }[] = [];
+
+        if (availabilityRaw) {
+            // Handle both formats the data might be stored in:
+            // Format A (dict):  { monday: [{startTime, endTime}], ... }
+            // Format B (array): [{ day: "Monday", slots: [{ start, end }] }, ...]
+            if (Array.isArray(availabilityRaw)) {
+                // Format B: array of { day, slots }
+                for (const item of availabilityRaw as any[]) {
+                    if (item && typeof item.day === 'string' && item.day.toLowerCase() === dayOfWeek) {
+                        const rawSlots = Array.isArray(item.slots) ? item.slots : [];
+                        daySlots = rawSlots.map((s: any) => ({
+                            startTime: s.startTime || s.start || '',
+                            endTime: s.endTime || s.end || '',
+                        })).filter((s: any) => s.startTime && s.endTime);
+                        break;
+                    }
+                }
+            } else if (typeof availabilityRaw === 'object') {
+                // Format A: dict keyed by day name
+                const dict = availabilityRaw as Record<string, any>;
+                const raw = dict[dayOfWeek] || [];
+                if (Array.isArray(raw)) {
+                    daySlots = raw.map((s: any) => ({
+                        startTime: s.startTime || s.start || '',
+                        endTime: s.endTime || s.end || '',
+                    })).filter((s: any) => s.startTime && s.endTime);
+                }
+            }
+        }
 
         // Fetch bookings for this instructor on this specific date
         // Bookings that are not cancelled or declined occupy the slot
