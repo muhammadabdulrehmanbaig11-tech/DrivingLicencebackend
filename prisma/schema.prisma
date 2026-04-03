@@ -20,9 +20,13 @@ enum UserRole {
 }
 
 enum ApprovalStatus {
+  DRAFT
   PENDING
+  SUBMITTED
+  UNDER_REVIEW
   APPROVED
   REJECTED
+  CHANGES_REQUESTED
   SUSPENDED
 }
 
@@ -88,13 +92,45 @@ model InstructorProfile {
   id              String          @id @default(uuid())
   userId          String          @unique
   bio             String          // Sanitized server-side for XSS
-  hourlyRate      Decimal         @db.Decimal(10, 2)
+  
+  // Teaching Profile
+  gender          String?
   experienceYears Int
   transmission    TransmissionType
   languages       String[]        // Array of languages spoken
   licenseNumber   String
+  areasCovered    String[]        @default([])
+  postcodes       String[]        @default([])
+  lessonTypes     String[]        @default([])
+
+  // Pricing (GBP)
+  hourlyRate      Decimal         @db.Decimal(10, 2) // Retained for backwards compatibility / base rate
+  pricing1Hour    Decimal?        @db.Decimal(10, 2)
+  pricing2Hour    Decimal?        @db.Decimal(10, 2)
+  pricing10Hour   Decimal?        @db.Decimal(10, 2)
+  pricingIntensive Decimal?       @db.Decimal(10, 2)
+
+  // Document Uploads (URLs)
+  badgeDocumentUrl     String?
+  idDocumentUrl        String?
+  insuranceDocumentUrl String?
+  dbsDocumentUrl       String?
+  vehicleDocumentUrl   String?
+
+  // Vehicle Information
+  carMake         String?
+  carModel        String?
+  carYear         Int?
+  carTransmission TransmissionType?
+  dualControl     Boolean?
+  carPhotoUrl     String?
+
+  // Availability
+  availability    Json?           // e.g. { "monday": ["09:00-11:00"], ... }
+
+  // Status & Metadata
   profileComplete Boolean         @default(false)
-  approvalStatus  ApprovalStatus  @default(PENDING)
+  approvalStatus  ApprovalStatus  @default(DRAFT)
   approvedAt      DateTime?
   approvedBy      String?         // Admin user ID who approved
   avgRating       Float           @default(0)

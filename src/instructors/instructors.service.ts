@@ -5,12 +5,8 @@ import {
 } from '@nestjs/common';
 import sanitizeHtml from 'sanitize-html';
 import { PrismaService } from '../prisma/prisma.service';
-import {
-    CreateInstructorProfileDto,
-    UpdateInstructorProfileDto,
-    SetLocationDto,
-    SearchInstructorsDto,
-} from './dto';
+import { CreateInstructorProfileDto, UpdateInstructorProfileDto, SetLocationDto, SearchInstructorsDto } from './dto';
+import { ApprovalStatus } from '@prisma/client';
 
 @Injectable()
 export class InstructorsService {
@@ -25,14 +21,10 @@ export class InstructorsService {
             where: { userId },
         });
 
-        const data = {
-            bio: sanitizeHtml(dto.bio, { allowedTags: [], allowedAttributes: {} }),
-            hourlyRate: dto.hourlyRate,
-            experienceYears: dto.experienceYears,
-            transmission: dto.transmission,
-            languages: dto.languages,
-            licenseNumber: dto.licenseNumber,
-        };
+        const data: Record<string, any> = { ...dto };
+        if (dto.bio) {
+            data.bio = sanitizeHtml(dto.bio, { allowedTags: [], allowedAttributes: {} });
+        }
 
         if (existing) {
             // Update existing profile instead of erroring
@@ -46,7 +38,7 @@ export class InstructorsService {
             data: {
                 userId,
                 ...data,
-            },
+            } as any,
         });
     }
 
@@ -61,19 +53,36 @@ export class InstructorsService {
             throw new NotFoundException('Profile not found');
         }
 
-        const data: Record<string, unknown> = {};
+        const data: Record<string, any> = { ...dto };
         if (dto.bio !== undefined) {
             data.bio = sanitizeHtml(dto.bio, { allowedTags: [], allowedAttributes: {} });
         }
-        if (dto.hourlyRate !== undefined) data.hourlyRate = dto.hourlyRate;
-        if (dto.experienceYears !== undefined) data.experienceYears = dto.experienceYears;
-        if (dto.transmission !== undefined) data.transmission = dto.transmission;
-        if (dto.languages !== undefined) data.languages = dto.languages;
-        if (dto.licenseNumber !== undefined) data.licenseNumber = dto.licenseNumber;
 
         return this.prisma.instructorProfile.update({
             where: { userId },
             data,
+        });
+    }
+
+    /**
+     * Submit an application for review. Moves from DRAFT to SUBMITTED.
+     */
+    async submitApplication(userId: string) {
+        const profile = await this.prisma.instructorProfile.findUnique({
+            where: { userId },
+        });
+        if (!profile) {
+            throw new NotFoundException('Profile not found');
+        }
+
+        // Basic sanity check before allowing submission
+        if (!profile.licenseNumber || !profile.transmission) {
+            throw new Error('Please complete the professional business details step first.');
+        }
+
+        return this.prisma.instructorProfile.update({
+            where: { userId },
+            data: { approvalStatus: ApprovalStatus.SUBMITTED },
         });
     }
 
@@ -133,7 +142,7 @@ export class InstructorsService {
      */
     async search(dto: SearchInstructorsDto) {
         const where: Record<string, unknown> = {
-            approvalStatus: 'APPROVED',
+            approvalStatus: ApprovalStatus.APPROVED,
         };
 
         if (dto.transmission) {
@@ -192,7 +201,7 @@ export class InstructorsService {
      */
     async getPublicProfile(instructorId: string) {
         const profile = await this.prisma.instructorProfile.findUnique({
-            where: { id: instructorId, approvalStatus: 'APPROVED' },
+            where: { id: instructorId, approvalStatus: ApprovalStatus.APPROVED },
             include: {
                 location: true,
                 user: { select: { firstName: true, lastName: true, avatarUrl: true } },
@@ -200,5 +209,15 @@ export class InstructorsService {
         });
         if (!profile) throw new NotFoundException('Instructor not found');
         return profile;
+    }
+
+    /**
+     * Update Approval Status (Admin)
+     */
+    async updateStatus(instructorId: string, status: ApprovalStatus) {
+        return this.prisma.instructorProfile.update({
+            where: { id: instructorId },
+            data: { approvalStatus: status },
+        });
     }
 }

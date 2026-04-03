@@ -18,7 +18,7 @@ import {
 } from './dto';
 import { JwtAuthGuard, RolesGuard } from '../common/guards';
 import { Roles, CurrentUser } from '../common/decorators';
-import { UserRole } from '@prisma/client';
+import { UserRole, ApprovalStatus } from '@prisma/client';
 
 @Controller('instructors')
 export class InstructorsController {
@@ -79,6 +79,25 @@ export class InstructorsController {
 
     // ─── PUBLIC PARAMETERISED ENDPOINTS ───
     // This MUST be after all "me" routes to avoid matching "me" as an :id
+
+    /** POST /api/instructors/me/submit — Submit application */
+    @Post('me/submit')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(UserRole.INSTRUCTOR)
+    submitApplication(@CurrentUser() user: { id: string }) {
+        return this.instructorsService.submitApplication(user.id);
+    }
+
+    /** PATCH /api/instructors/:id/status — Admin application review */
+    @Patch(':id/status')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(UserRole.ADMIN)
+    updateStatus(
+        @Param('id') id: string,
+        @Body('status') status: ApprovalStatus,
+    ) {
+        return this.instructorsService.updateStatus(id, status);
+    }
 
     /** GET /api/instructors/:id — View single instructor profile */
     @Get(':id')

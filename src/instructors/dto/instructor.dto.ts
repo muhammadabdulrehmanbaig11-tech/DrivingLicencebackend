@@ -12,46 +12,37 @@ import {
 import { Type } from 'class-transformer';
 import { TransmissionType } from '@prisma/client';
 
-export class CreateInstructorProfileDto {
-    @IsString()
-    @IsNotEmpty()
-    @MaxLength(1000)
-    bio: string;
-
-    @IsNumber()
-    @Min(1)
-    @Max(500)
-    hourlyRate: number;
-
-    @IsNumber()
-    @Min(0)
-    @Max(50)
-    experienceYears: number;
-
-    @IsEnum(TransmissionType)
-    transmission: TransmissionType;
-
-    @IsArray()
-    @IsString({ each: true })
-    languages: string[];
-
-    @IsString()
-    @IsNotEmpty()
-    @MaxLength(50)
-    licenseNumber: string;
-}
-
-export class UpdateInstructorProfileDto {
+export class BaseInstructorProfileDto {
     @IsOptional()
     @IsString()
     @MaxLength(1000)
     bio?: string;
 
     @IsOptional()
+    @IsString()
+    gender?: string;
+
+    @IsOptional()
     @IsNumber()
     @Min(1)
     @Max(500)
     hourlyRate?: number;
+
+    @IsOptional()
+    @IsNumber()
+    pricing1Hour?: number;
+
+    @IsOptional()
+    @IsNumber()
+    pricing2Hour?: number;
+
+    @IsOptional()
+    @IsNumber()
+    pricing10Hour?: number;
+
+    @IsOptional()
+    @IsNumber()
+    pricingIntensive?: number;
 
     @IsOptional()
     @IsNumber()
@@ -72,7 +63,74 @@ export class UpdateInstructorProfileDto {
     @IsString()
     @MaxLength(50)
     licenseNumber?: string;
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    areasCovered?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    postcodes?: string[];
+
+    @IsOptional()
+    @IsArray()
+    @IsString({ each: true })
+    lessonTypes?: string[];
+
+    // Document URLs
+    @IsOptional()
+    @IsString()
+    badgeDocumentUrl?: string;
+
+    @IsOptional()
+    @IsString()
+    idDocumentUrl?: string;
+
+    @IsOptional()
+    @IsString()
+    insuranceDocumentUrl?: string;
+
+    @IsOptional()
+    @IsString()
+    dbsDocumentUrl?: string;
+
+    @IsOptional()
+    @IsString()
+    vehicleDocumentUrl?: string;
+
+    // Vehicle fields
+    @IsOptional()
+    @IsString()
+    carMake?: string;
+
+    @IsOptional()
+    @IsString()
+    carModel?: string;
+
+    @IsOptional()
+    @IsNumber()
+    carYear?: number;
+
+    @IsOptional()
+    @IsEnum(TransmissionType)
+    carTransmission?: TransmissionType;
+
+    @IsOptional()
+    dualControl?: boolean;
+
+    @IsOptional()
+    @IsString()
+    carPhotoUrl?: string;
+
+    @IsOptional()
+    availability?: any;
 }
+
+export class CreateInstructorProfileDto extends BaseInstructorProfileDto {}
+
+export class UpdateInstructorProfileDto extends BaseInstructorProfileDto {}
 
 export class SetLocationDto {
     @IsString()
