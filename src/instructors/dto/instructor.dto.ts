@@ -117,6 +117,14 @@ export class SearchInstructorsDto {
     city?: string;
 
     @IsOptional()
+    @IsString()
+    town?: string;
+
+    @IsOptional()
+    @IsString()
+    postcode?: string;
+
+    @IsOptional()
     @IsEnum(TransmissionType)
     transmission?: TransmissionType;
 
