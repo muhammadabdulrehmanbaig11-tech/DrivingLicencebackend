@@ -1,5 +1,5 @@
 /**
- * Prisma Seed Script — DriveLicence Pro
+ * Prisma Seed Script — Teach Me Drive
  *
  * Creates:
  *  - 1 Admin user
@@ -222,10 +222,10 @@ async function main() {
 
     // ──────── Admin ────────
     const admin = await prisma.user.upsert({
-        where: { email: "admin@drivelicence.pro" },
+        where: { email: "admin@teachmedrive.co.uk" },
         update: {},
         create: {
-            email: "admin@drivelicence.pro",
+            email: "admin@teachmedrive.co.uk",
             passwordHash,
             firstName: "Admin",
             lastName: "User",
