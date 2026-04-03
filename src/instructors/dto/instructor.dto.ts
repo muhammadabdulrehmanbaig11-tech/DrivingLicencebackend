@@ -8,9 +8,71 @@ import {
     Min,
     Max,
     IsOptional,
+    ValidateNested,
+    Matches,
+    IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TransmissionType } from '@prisma/client';
+
+class AvailabilitySlotDto {
+    @IsString()
+    @Matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, {
+        message: 'StartTime must be in HH:mm format',
+    })
+    startTime: string;
+
+    @IsString()
+    @Matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/, {
+        message: 'EndTime must be in HH:mm format',
+    })
+    endTime: string;
+}
+
+class AvailabilityScheduleDto {
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => AvailabilitySlotDto)
+    monday?: AvailabilitySlotDto[];
+
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => AvailabilitySlotDto)
+    tuesday?: AvailabilitySlotDto[];
+
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => AvailabilitySlotDto)
+    wednesday?: AvailabilitySlotDto[];
+
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => AvailabilitySlotDto)
+    thursday?: AvailabilitySlotDto[];
+
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => AvailabilitySlotDto)
+    friday?: AvailabilitySlotDto[];
+
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => AvailabilitySlotDto)
+    saturday?: AvailabilitySlotDto[];
+
+    @IsOptional()
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => AvailabilitySlotDto)
+    sunday?: AvailabilitySlotDto[];
+}
+
 
 export class BaseInstructorProfileDto {
     @IsOptional()
@@ -125,7 +187,10 @@ export class BaseInstructorProfileDto {
     carPhotoUrl?: string;
 
     @IsOptional()
-    availability?: any;
+    @IsObject()
+    @ValidateNested()
+    @Type(() => AvailabilityScheduleDto)
+    availability?: AvailabilityScheduleDto;
 }
 
 export class CreateInstructorProfileDto extends BaseInstructorProfileDto {}
