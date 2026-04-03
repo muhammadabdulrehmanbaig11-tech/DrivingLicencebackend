@@ -310,20 +310,43 @@ export class InstructorsService {
             select: { startTime: true, endTime: true }
         });
 
-        // Compute available slots
-        // Time logic: for simplicity, we assume we want strictly the base available blocks that aren't booked.
-        // A smarter way: split blocks. However, standard booking usually books EXACT matching slot from availability.
-        // Let's filter out any base slot that overlaps with a booking.
-        const availableSlots = daySlots.filter(baseSlot => {
-            const baseStart = this.timeToMinutes(baseSlot.startTime);
-            const baseEnd = this.timeToMinutes(baseSlot.endTime);
-            
-            // Check if any booking overlaps with this base slot
+        // 1. Generate all possible 1-hour slots from basic availability ranges
+        const allPossibleSlots: { startTime: string; endTime: string }[] = [];
+        for (const range of daySlots) {
+            let start = this.timeToMinutes(range.startTime);
+            const end = this.timeToMinutes(range.endTime);
+
+            // Split ranges into 1-hour intervals
+            while (start + 60 <= end) {
+                allPossibleSlots.push({
+                    startTime: this.minutesToTime(start),
+                    endTime: this.minutesToTime(start + 60),
+                });
+                start += 60;
+            }
+        }
+
+        // 2. Filter out slots that overlap with existing bookings
+        // Also handle "today" past-time filtering
+        const now = new Date();
+        const isToday = targetDate.toDateString() === now.toDateString();
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+        const availableSlots = allPossibleSlots.filter(slot => {
+            const sStart = this.timeToMinutes(slot.startTime);
+            const sEnd = this.timeToMinutes(slot.endTime);
+
+            // Filter if it's in the past for today
+            if (isToday && sStart <= currentMinutes) {
+                return false;
+            }
+
+            // Check overlap with any existing booking
             const hasOverlap = bookingsOnDate.some(b => {
                 const bStart = this.timeToMinutes(b.startTime);
                 const bEnd = this.timeToMinutes(b.endTime);
-                // Overlap occurs if max(start1, start2) < min(end1, end2)
-                return Math.max(baseStart, bStart) < Math.min(baseEnd, bEnd);
+                // Overlap: max(start1, start2) < min(end1, end2)
+                return Math.max(sStart, bStart) < Math.min(sEnd, bEnd);
             });
 
             return !hasOverlap;
@@ -339,6 +362,12 @@ export class InstructorsService {
     private timeToMinutes(time: string): number {
         const [hours, minutes] = time.split(':').map(Number);
         return hours * 60 + minutes;
+    }
+
+    private minutesToTime(minutes: number): string {
+        const h = Math.floor(minutes / 60);
+        const m = minutes % 60;
+        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
     }
 
     /**

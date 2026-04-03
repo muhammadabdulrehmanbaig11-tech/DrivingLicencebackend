@@ -56,6 +56,11 @@ export class BookingsService {
         const rStart = t2m(reqStart);
         const rEnd = t2m(reqEnd);
 
+        // Enforce 1-hour slots strictly
+        if (rEnd - rStart !== 60) {
+            throw new BadRequestException('All bookings must be exactly 1 hour');
+        }
+
         const hasOverlap = existingBookings.some(b => {
             const bStart = t2m(b.startTime);
             const bEnd = t2m(b.endTime);
