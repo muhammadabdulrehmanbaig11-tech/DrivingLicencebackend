@@ -104,4 +104,13 @@ export class InstructorsController {
     getPublicProfile(@Param('id') id: string) {
         return this.instructorsService.getPublicProfile(id);
     }
+
+    /** GET /api/instructors/:id/availability?date=YYYY-MM-DD */
+    @Get(':id/availability')
+    getAvailability(
+        @Param('id') id: string,
+        @Query('date') date: string
+    ) {
+        return this.instructorsService.getAvailability(id, date);
+    }
 }

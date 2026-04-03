@@ -34,6 +34,38 @@ export class BookingsService {
         // Calculate total price server-side
         const totalPrice = instructor.hourlyRate;
 
+        // Prevent Double Booking (Overlap Check)
+        const reqStart = dto.startTime;
+        const reqEnd = dto.endTime;
+        
+        const existingBookings = await this.prisma.booking.findMany({
+            where: {
+                instructorId: dto.instructorId,
+                date: bookingDate,
+                status: { in: ['REQUESTED', 'ACCEPTED', 'COMPLETED', 'DISPUTED'] }
+            },
+            select: { startTime: true, endTime: true }
+        });
+
+        // Time to minutes helper
+        const t2m = (t: string) => {
+            const [h, m] = t.split(':').map(Number);
+            return h * 60 + m;
+        };
+
+        const rStart = t2m(reqStart);
+        const rEnd = t2m(reqEnd);
+
+        const hasOverlap = existingBookings.some(b => {
+            const bStart = t2m(b.startTime);
+            const bEnd = t2m(b.endTime);
+            return Math.max(rStart, bStart) < Math.min(rEnd, bEnd);
+        });
+
+        if (hasOverlap) {
+            throw new BadRequestException('This time slot is no longer available');
+        }
+
         return this.prisma.booking.create({
             data: {
                 studentId,

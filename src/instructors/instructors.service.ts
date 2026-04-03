@@ -2,6 +2,7 @@ import {
     Injectable,
     NotFoundException,
     ForbiddenException,
+    BadRequestException,
 } from '@nestjs/common';
 import sanitizeHtml from 'sanitize-html';
 import { PrismaService } from '../prisma/prisma.service';
@@ -174,8 +175,32 @@ export class InstructorsService {
             ? { location: { AND: locationConditions } }
             : {};
 
-        const limit = Math.min(dto.limit || 12, 20); // Cap at 20 to prevent scraping
+        const limit = Math.min(dto.limit || 12, 50); // Cap at 50 to prevent scraping
         const offset = dto.offset || 0;
+
+        let orderByClause: any = { avgRating: 'desc' }; // default
+        if (dto.sortBy) {
+            switch (dto.sortBy) {
+                case 'priceAsc':
+                    orderByClause = { hourlyRate: 'asc' };
+                    break;
+                case 'priceDesc':
+                    orderByClause = { hourlyRate: 'desc' };
+                    break;
+                case 'expAsc':
+                    orderByClause = { experienceYears: 'asc' };
+                    break;
+                case 'expDesc':
+                    orderByClause = { experienceYears: 'desc' };
+                    break;
+                case 'ratingDesc':
+                    orderByClause = { avgRating: 'desc' };
+                    break;
+                case 'newest':
+                    orderByClause = { createdAt: 'desc' };
+                    break;
+            }
+        }
 
         const [instructors, total] = await Promise.all([
             this.prisma.instructorProfile.findMany({
@@ -184,7 +209,7 @@ export class InstructorsService {
                     location: true,
                     user: { select: { firstName: true, lastName: true, avatarUrl: true } },
                 },
-                orderBy: { avgRating: 'desc' },
+                orderBy: orderByClause,
                 take: limit,
                 skip: offset,
             }),
@@ -199,16 +224,93 @@ export class InstructorsService {
     /**
      * Get a single approved instructor's public profile.
      */
-    async getPublicProfile(instructorId: string) {
+    async getPublicProfile(id: string) {
         const profile = await this.prisma.instructorProfile.findUnique({
-            where: { id: instructorId, approvalStatus: ApprovalStatus.APPROVED },
+            where: { id },
             include: {
-                location: true,
                 user: { select: { firstName: true, lastName: true, avatarUrl: true } },
+                location: true,
+                reviewsReceived: {
+                    include: { student: { select: { firstName: true, avatarUrl: true } } },
+                    orderBy: { createdAt: 'desc' },
+                },
             },
         });
-        if (!profile) throw new NotFoundException('Instructor not found');
+
+        if (!profile || profile.approvalStatus !== 'APPROVED') {
+            throw new NotFoundException('Instructor profile not found or not public');
+        }
+
         return profile;
+    }
+
+    /**
+     * Get available slots for an instructor on a specific date.
+     * Subtracts booked slots from the base schedule.
+     */
+    async getAvailability(instructorId: string, dateStr: string) {
+        if (!dateStr || isNaN(Date.parse(dateStr))) {
+            throw new BadRequestException('Invalid date format');
+        }
+
+        const targetDate = new Date(dateStr);
+        const dayOfWeek = targetDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase(); // e.g., 'monday'
+
+        const profile = await this.prisma.instructorProfile.findUnique({
+            where: { id: instructorId },
+            select: { availability: true }
+        });
+
+        if (!profile) {
+            throw new NotFoundException('Instructor not found');
+        }
+
+        const availabilityObj = profile.availability as Record<string, { startTime: string; endTime: string }[]> | null;
+        let daySlots = availabilityObj ? availabilityObj[dayOfWeek] : [];
+        if (!daySlots) daySlots = [];
+
+        // Fetch bookings for this instructor on this specific date
+        // Bookings that are not cancelled or declined occupy the slot
+        const bookingsOnDate = await this.prisma.booking.findMany({
+            where: {
+                instructorId,
+                date: targetDate, // Prisma will match Date exactly if time is 00:00:00. Make sure date parsing is aligned.
+                status: {
+                    in: ['REQUESTED', 'ACCEPTED', 'COMPLETED', 'DISPUTED']
+                }
+            },
+            select: { startTime: true, endTime: true }
+        });
+
+        // Compute available slots
+        // Time logic: for simplicity, we assume we want strictly the base available blocks that aren't booked.
+        // A smarter way: split blocks. However, standard booking usually books EXACT matching slot from availability.
+        // Let's filter out any base slot that overlaps with a booking.
+        const availableSlots = daySlots.filter(baseSlot => {
+            const baseStart = this.timeToMinutes(baseSlot.startTime);
+            const baseEnd = this.timeToMinutes(baseSlot.endTime);
+            
+            // Check if any booking overlaps with this base slot
+            const hasOverlap = bookingsOnDate.some(b => {
+                const bStart = this.timeToMinutes(b.startTime);
+                const bEnd = this.timeToMinutes(b.endTime);
+                // Overlap occurs if max(start1, start2) < min(end1, end2)
+                return Math.max(baseStart, bStart) < Math.min(baseEnd, bEnd);
+            });
+
+            return !hasOverlap;
+        });
+
+        return {
+            date: targetDate.toISOString().split('T')[0],
+            dayOfWeek,
+            availableSlots
+        };
+    }
+
+    private timeToMinutes(time: string): number {
+        const [hours, minutes] = time.split(':').map(Number);
+        return hours * 60 + minutes;
     }
 
     /**

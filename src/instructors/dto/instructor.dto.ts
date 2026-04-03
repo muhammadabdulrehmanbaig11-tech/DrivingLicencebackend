@@ -282,5 +282,9 @@ export class SearchInstructorsDto {
     @IsNumber()
     @Min(0)
     offset?: number;
+
+    @IsOptional()
+    @IsString()
+    sortBy?: 'priceAsc' | 'priceDesc' | 'expAsc' | 'expDesc' | 'ratingDesc' | 'newest';
 }
 
