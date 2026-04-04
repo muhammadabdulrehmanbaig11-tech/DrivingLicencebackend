@@ -10,7 +10,7 @@
  */
 
 import "dotenv/config";
-import { PrismaClient, UserRole, TransmissionType, ApprovalStatus, BookingStatus } from "@prisma/client";
+import { PrismaClient, UserRole, TransmissionType, ApprovalStatus, BookingStatus, AdminRole } from "@prisma/client";
 import { Pool } from "pg";
 import { PrismaPg } from "@prisma/adapter-pg";
 import * as argon2 from "argon2";
@@ -235,6 +235,33 @@ async function main() {
         },
     });
     console.log(`  ✅ Admin:     ${admin.email}`);
+
+    // Create Admin Profile for the seeded admin
+    await prisma.adminProfile.upsert({
+        where: { userId: admin.id },
+        update: {},
+        create: {
+            userId: admin.id,
+            role: AdminRole.SUPER_ADMIN,
+            permissions: [
+                "manage_instructors",
+                "approve_instructors",
+                "reject_instructors",
+                "suspend_users",
+                "manage_students",
+                "manage_bookings",
+                "view_reports",
+                "view_audit_logs",
+                "manage_refunds",
+                "view_payments",
+                "manage_admins",
+                "impersonate_users"
+            ],
+            mfaEnabled: false, // User will be prompted to setup on first login
+        }
+    });
+
+    console.log(`  ✅ Admin:     Terminal Profile initialized`);
 
     // ──────── Students ────────
     const student1 = await prisma.user.upsert({

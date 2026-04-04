@@ -8,6 +8,7 @@ import { InstructorsModule } from './instructors/instructors.module';
 import { BookingsModule } from './bookings/bookings.module';
 import { ReviewsModule } from './reviews/reviews.module';
 import { AdminModule } from './admin/admin.module';
+import { AdminAuthModule } from './admin-auth/admin-auth.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { AdminModule } from './admin/admin.module';
 
     // Feature modules
     AuthModule,
+    AdminAuthModule,
     InstructorsModule,
     BookingsModule,
     ReviewsModule,

@@ -2,14 +2,21 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { join } from 'path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+    const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  app.setGlobalPrefix('api');
-  app.use(cookieParser());
+    // Security Headers
+    app.use(helmet());
+
+    // Trust proxy for accurate IP-based throttling
+    app.set('trust proxy', 1);
+
+    app.setGlobalPrefix('api');
+    app.use(cookieParser());
 
   // Serve uploaded files statically
   app.useStaticAssets(join(process.cwd(), 'uploads'), { prefix: '/uploads/' });

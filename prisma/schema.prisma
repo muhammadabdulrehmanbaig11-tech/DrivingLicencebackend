@@ -52,6 +52,21 @@ enum TransmissionType {
   BOTH
 }
 
+enum AdminRole {
+  SUPER_ADMIN
+  OPERATIONS
+  SUPPORT
+  FINANCE
+  CONTENT_REVIEWER
+}
+
+enum AdminInviteStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
 // ──────────────── MODELS ────────────────
 
 /// Base user account — shared by Students, Instructors, and Admins.
@@ -75,14 +90,78 @@ model User {
 
   // Relations
   instructorProfile InstructorProfile?
+  adminProfile      AdminProfile?
   bookingsAsStudent Booking[]  @relation("StudentBookings")
   reviewsWritten    Review[]   @relation("ReviewAuthor")
   payments          Payment[]
   auditLogs         AuditLog[]
+  adminInvitesSent  AdminInvite[] @relation("InviteSender")
+  adminInvitesReceived AdminInvite? @relation("InviteTarget")
 
   @@index([email])
   @@index([role])
   @@map("users")
+}
+
+/// Extended profile for Admins with RBAC and MFA.
+model AdminProfile {
+  id               String      @id @default(uuid())
+  userId           String      @unique
+  role             AdminRole   @default(SUPPORT)
+  permissions      String[]    @default([]) // Granular override if needed
+  
+  // Security
+  mfaEnabled       Boolean     @default(false)
+  mfaSecret        String?     // Transformed/Encrypted at rest
+  mfaBackupCodes   String[]    @default([])
+  
+  lastLoginAt      DateTime?
+  lastLoginIp      DateTime?   // To be changed to String in بعدی but keeping consistency with naming for now
+  loginHistory     Json?       @default("[]") // [{ ip, timestamp, device, success }]
+
+  // Relations
+  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeSessions   AdminSession[]
+
+  @@map("admin_profiles")
+}
+
+/// Admin invite for high-security onboarding.
+model AdminInvite {
+  id            String            @id @default(uuid())
+  email         String            @unique
+  role          AdminRole
+  invitedById   String
+  token         String            @unique // Hashed
+  status        AdminInviteStatus @default(PENDING)
+  expiresAt     DateTime
+  createdAt     DateTime          @default(now())
+  acceptedAt    DateTime?
+
+  // Relations
+  invitedBy     User              @relation("InviteSender", fields: [invitedById], references: [id])
+  acceptedBy    User?             @relation("InviteTarget", fields: [email], references: [email])
+
+  @@map("admin_invites")
+}
+
+/// Active admin session tracking for revocation and rotation.
+model AdminSession {
+  id             String   @id @default(uuid())
+  adminProfileId String
+  tokenHash      String   @unique
+  deviceInfo     String?
+  ipAddress      String?
+  lastSeenAt     DateTime @default(now())
+  expiresAt      DateTime
+  revoked        Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  // Relations
+  adminProfile   AdminProfile @relation(fields: [adminProfileId], references: [id], onDelete: Cascade)
+
+  @@index([adminProfileId])
+  @@map("admin_sessions")
 }
 
 /// Extended profile for Instructors.
